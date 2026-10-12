@@ -1,0 +1,884 @@
+import { useEffect, useMemo, useState } from 'react';
+import { AnimatePresence, motion } from 'framer-motion';
+import {
+  ArrowDownToLine,
+  ArrowRight,
+  BadgeCheck,
+  Check,
+  CheckCircle2,
+  Clapperboard,
+  Film,
+  FolderPlus,
+  Headphones,
+  KeyRound,
+  LockKeyhole,
+  MonitorPlay,
+  Music2,
+  Package,
+  PenTool,
+  Plus,
+  QrCode,
+  Search,
+  Settings2,
+  ShieldCheck,
+  ShoppingBag,
+  Sparkles,
+  Trash2,
+  Tv,
+  WalletCards,
+  Youtube,
+} from 'lucide-react';
+import qrisImage from '../DANA.jpeg';
+import { Button } from './components/ui/button.jsx';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from './components/ui/dialog.jsx';
+
+const STORAGE_KEY_CATS = '2akinostore_cats_v12';
+const STORAGE_KEY_PRODS = '2akinostore_products_v12';
+const STORAGE_KEY_TRANS = '2akinostore_transactions_v12';
+const STORAGE_KEY_SETTINGS = '2akinostore_settings_v12';
+
+const defaultCategories = [
+  { name: 'Netflix', icon: 'tv', color: 'text-red-400' },
+  { name: 'CapCut', icon: 'video', color: 'text-cyan-300' },
+  { name: 'Spotify', icon: 'spotify', color: 'text-emerald-400' },
+  { name: 'YouTube', icon: 'youtube', color: 'text-red-500' },
+  { name: 'Canva', icon: 'canva', color: 'text-blue-400' },
+  { name: 'Disney+', icon: 'disney', color: 'text-indigo-300' },
+  { name: 'iQIYI', icon: 'iqiyi', color: 'text-emerald-300' },
+];
+
+const defaultProducts = [
+  { id: 'p1', category: 'Netflix', title: 'Netflix Shared 1 Profile', price: 35000, duration: '30 Hari Full Garansi', icon: 'tv' },
+  { id: 'p2', category: 'Netflix', title: 'Netflix Private Full Account (4K)', price: 160000, duration: '30 Hari Full Garansi (5 Profile)', icon: 'film' },
+  { id: 'p3', category: 'CapCut', title: 'CapCut Pro 1 Bulan', price: 15000, duration: '30 Hari Garansi', icon: 'video' },
+  { id: 'p4', category: 'Spotify', title: 'Spotify Premium Individual', price: 25000, duration: '1 Bulan Garansi Anti Plan Fall', icon: 'spotify' },
+  { id: 'p5', category: 'YouTube', title: 'YouTube Premium No Ads', price: 15000, duration: '1 Bulan Invite Family', icon: 'youtube' },
+  { id: 'p6', category: 'Canva', title: 'Canva Pro Designer', price: 10000, duration: '1 Tahun Garansi Tim', icon: 'canva' },
+  { id: 'p7', category: 'iQIYI', title: 'iQIYI VIP Premium Standard', price: 20000, duration: '1 Bulan Garansi Full', icon: 'iqiyi' },
+];
+
+const defaultSettings = { adminWA: '6285111219046', adminPass: '0987654321' };
+const currency = new Intl.NumberFormat('id-ID');
+const inputClass =
+  'mt-2 h-11 w-full rounded-xl border border-white/10 bg-black/30 px-4 text-sm text-white outline-none transition placeholder:text-zinc-600 focus:border-red-500/70 focus:ring-2 focus:ring-red-500/15';
+
+function readStorage(key, fallback) {
+  const value = localStorage.getItem(key);
+  return value ? JSON.parse(value) : fallback;
+}
+
+function formatPrice(amount) {
+  return `Rp ${currency.format(amount)}`;
+}
+
+function iconFor(value, size = 18) {
+  const iconClass = 'shrink-0';
+  if (value?.includes('youtube')) return <Youtube size={size} className={`${iconClass} text-red-400`} />;
+  if (value?.includes('spotify')) return <Music2 size={size} className={`${iconClass} text-emerald-400`} />;
+  if (value?.includes('video')) return <Sparkles size={size} className={`${iconClass} text-cyan-300`} />;
+  if (value?.includes('film')) return <Film size={size} className={`${iconClass} text-rose-300`} />;
+  if (value?.includes('canva') || value?.includes('pen')) return <PenTool size={size} className={`${iconClass} text-blue-300`} />;
+  if (value?.includes('iqiyi') || value?.includes('clapper')) return <Clapperboard size={size} className={`${iconClass} text-emerald-300`} />;
+  if (value?.includes('disney') || value?.includes('crown')) return <Sparkles size={size} className={`${iconClass} text-indigo-300`} />;
+  if (value?.includes('headphone')) return <Headphones size={size} className={iconClass} />;
+  return <Tv size={size} className={`${iconClass} text-red-400`} />;
+}
+
+function whatsappUrl(number, message) {
+  const cleanNumber = (number || defaultSettings.adminWA).replace(/\D/g, '');
+  return `https://wa.me/${cleanNumber}?text=${encodeURIComponent(message)}`;
+}
+
+function SectionHeading({ eyebrow, title, description, action }) {
+  return (
+    <div className="mb-6 flex flex-wrap items-end justify-between gap-4">
+      <div>
+        {eyebrow && <p className="mb-2 text-[11px] font-bold uppercase tracking-[0.22em] text-red-400">{eyebrow}</p>}
+        <h2 className="text-2xl font-bold tracking-tight text-white sm:text-3xl">{title}</h2>
+        {description && <p className="mt-2 max-w-2xl text-sm leading-relaxed text-zinc-400">{description}</p>}
+      </div>
+      {action}
+    </div>
+  );
+}
+
+function App() {
+  const [categories, setCategories] = useState(() => readStorage(STORAGE_KEY_CATS, defaultCategories));
+  const [products, setProducts] = useState(() => readStorage(STORAGE_KEY_PRODS, defaultProducts));
+  const [transactions, setTransactions] = useState(() => readStorage(STORAGE_KEY_TRANS, []));
+  const [settings, setSettings] = useState(() => readStorage(STORAGE_KEY_SETTINGS, defaultSettings));
+  const [activeTab, setActiveTab] = useState('store');
+  const [adminTab, setAdminTab] = useState('products');
+  const [selectedCategory, setSelectedCategory] = useState('All');
+  const [isAdminLoggedIn, setIsAdminLoggedIn] = useState(false);
+  const [loginOpen, setLoginOpen] = useState(false);
+  const [categoryOpen, setCategoryOpen] = useState(false);
+  const [productOpen, setProductOpen] = useState(false);
+  const [checkoutProduct, setCheckoutProduct] = useState(null);
+  const [checkoutStep, setCheckoutStep] = useState('form');
+  const [invoice, setInvoice] = useState(null);
+  const [customerName, setCustomerName] = useState('');
+  const [customerWA, setCustomerWA] = useState('');
+  const [adminPassword, setAdminPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [adminWANumber, setAdminWANumber] = useState(settings.adminWA || defaultSettings.adminWA);
+  const [categoryName, setCategoryName] = useState('');
+  const [categoryIcon, setCategoryIcon] = useState('tv');
+  const [productCategory, setProductCategory] = useState('');
+  const [productTitle, setProductTitle] = useState('');
+  const [productPrice, setProductPrice] = useState('');
+  const [productDuration, setProductDuration] = useState('');
+  const [trackQuery, setTrackQuery] = useState('');
+  const [notice, setNotice] = useState('');
+
+  useEffect(() => {
+    localStorage.setItem(STORAGE_KEY_CATS, JSON.stringify(categories));
+  }, [categories]);
+  useEffect(() => {
+    localStorage.setItem(STORAGE_KEY_PRODS, JSON.stringify(products));
+  }, [products]);
+  useEffect(() => {
+    localStorage.setItem(STORAGE_KEY_TRANS, JSON.stringify(transactions));
+  }, [transactions]);
+  useEffect(() => {
+    localStorage.setItem(STORAGE_KEY_SETTINGS, JSON.stringify(settings));
+  }, [settings]);
+  useEffect(() => {
+    if (!notice) return undefined;
+    const timeout = window.setTimeout(() => setNotice(''), 3200);
+    return () => window.clearTimeout(timeout);
+  }, [notice]);
+
+  const visibleProducts = useMemo(() => {
+    if (selectedCategory === 'All') return products;
+    return products.filter((product) => product.category.toLowerCase() === selectedCategory.toLowerCase());
+  }, [products, selectedCategory]);
+
+  const matchedTransactions = useMemo(() => {
+    const query = trackQuery.trim().toLowerCase();
+    if (!query) return [];
+    return transactions.filter(
+      (transaction) =>
+        transaction.code.toLowerCase().includes(query) ||
+        transaction.customerWA.toLowerCase().includes(query),
+    );
+  }, [trackQuery, transactions]);
+
+  function openAdminAccess() {
+    if (isAdminLoggedIn) setActiveTab('admin');
+    else setLoginOpen(true);
+  }
+
+  function handleAdminLogin(event) {
+    event.preventDefault();
+    if (adminPassword.trim() !== (settings.adminPass || defaultSettings.adminPass)) {
+      setNotice('Password admin salah.');
+      return;
+    }
+    setIsAdminLoggedIn(true);
+    setAdminPassword('');
+    setLoginOpen(false);
+    setActiveTab('admin');
+    setNotice('Berhasil masuk ke dashboard admin.');
+  }
+
+  function logoutAdmin() {
+    setIsAdminLoggedIn(false);
+    setActiveTab('store');
+    setNotice('Anda telah keluar dari akses admin.');
+  }
+
+  function startCheckout(product) {
+    setCheckoutProduct(product);
+    setCheckoutStep('form');
+    setInvoice(null);
+    setCustomerName('');
+    setCustomerWA('');
+  }
+
+  function processToQRIS(event) {
+    event.preventDefault();
+    if (!customerName.trim() || !customerWA.trim()) {
+      setNotice('Mohon isi nama lengkap dan nomor WhatsApp Anda.');
+      return;
+    }
+    if (!checkoutProduct) return;
+    const nextInvoice = {
+      code: `INV-${Math.floor(100000 + Math.random() * 900000)}`,
+      date: new Date().toLocaleString('id-ID'),
+      customerName: customerName.trim(),
+      customerWA: customerWA.trim(),
+      productId: checkoutProduct.id,
+      productTitle: checkoutProduct.title,
+      amount: checkoutProduct.price,
+    };
+    setInvoice(nextInvoice);
+    setCheckoutStep('qris');
+  }
+
+  function confirmPayment() {
+    if (!invoice) return;
+    setTransactions((current) => [invoice, ...current]);
+    setCheckoutStep('success');
+  }
+
+  function addCategory(event) {
+    event.preventDefault();
+    const cleanName = categoryName.trim();
+    if (!cleanName) {
+      setNotice('Nama kategori tidak boleh kosong.');
+      return;
+    }
+    if (categories.some((category) => category.name.toLowerCase() === cleanName.toLowerCase())) {
+      setNotice('Kategori tersebut sudah ada.');
+      return;
+    }
+    setCategories((current) => [...current, { name: cleanName, icon: categoryIcon, color: 'text-amber-300' }]);
+    setCategoryName('');
+    setCategoryOpen(false);
+    setNotice(`Kategori ${cleanName} berhasil ditambahkan.`);
+  }
+
+  function openAddProduct() {
+    setProductCategory(categories[0]?.name || '');
+    setProductTitle('');
+    setProductPrice('');
+    setProductDuration('');
+    setProductOpen(true);
+  }
+
+  function addProduct(event) {
+    event.preventDefault();
+    const price = Number(productPrice);
+    if (!productTitle.trim() || !Number.isFinite(price) || price <= 0 || !productDuration.trim() || !productCategory) {
+      setNotice('Mohon isi semua data produk dengan benar.');
+      return;
+    }
+    const category = categories.find((item) => item.name === productCategory);
+    setProducts((current) => [
+      ...current,
+      {
+        id: `p_${Date.now()}`,
+        category: productCategory,
+        title: productTitle.trim(),
+        price,
+        duration: productDuration.trim(),
+        icon: category?.icon || 'tv',
+      },
+    ]);
+    setProductOpen(false);
+    setNotice(`Produk ${productTitle.trim()} berhasil ditambahkan.`);
+  }
+
+  function deleteProduct(productId) {
+    if (!window.confirm('Apakah Anda yakin ingin menghapus produk ini?')) return;
+    setProducts((current) => current.filter((product) => product.id !== productId));
+    setNotice('Produk berhasil dihapus.');
+  }
+
+  function saveAdminSettings(event) {
+    event.preventDefault();
+    const cleanNumber = adminWANumber.trim();
+    if (!cleanNumber) {
+      setNotice('Nomor WhatsApp admin tidak boleh kosong.');
+      return;
+    }
+    setSettings((current) => ({
+      ...current,
+      adminWA: cleanNumber,
+      ...(newPassword.trim() ? { adminPass: newPassword.trim() } : {}),
+    }));
+    setNewPassword('');
+    setNotice('Pengaturan admin berhasil disimpan.');
+  }
+
+  function downloadTransactions() {
+    if (transactions.length === 0) {
+      setNotice('Belum ada data transaksi untuk diunduh.');
+      return;
+    }
+    const rows = [
+      ['Invoice', 'Tanggal', 'Nama Pembeli', 'Nomor WA', 'Produk', 'Total Harga'],
+      ...transactions.map((transaction) => [
+        transaction.code,
+        transaction.date,
+        transaction.customerName,
+        transaction.customerWA,
+        transaction.productTitle,
+        transaction.amount,
+      ]),
+    ];
+    const csv = rows
+      .map((row) => row.map((cell) => `"${String(cell ?? '').replaceAll('"', '""')}"`).join(','))
+      .join('\r\n');
+    const blob = new Blob([`\uFEFF${csv}`], { type: 'text/csv;charset=utf-8;' });
+    const downloadUrl = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = downloadUrl;
+    link.download = 'Laporan_Penjualan_2akinoStore.csv';
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(downloadUrl);
+  }
+
+  function renderProductCard(product, index) {
+    return (
+      <motion.article
+        key={product.id}
+        initial={{ opacity: 0, y: 16 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.35, delay: Math.min(index * 0.045, 0.24) }}
+        className="group magic-shimmer flex flex-col rounded-2xl border border-white/[0.08] bg-[#111114] p-5 transition duration-300 hover:-translate-y-1 hover:border-red-500/30 hover:shadow-glow"
+      >
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex h-12 w-12 items-center justify-center rounded-2xl border border-white/[0.08] bg-white/[0.04]">
+            {iconFor(product.icon, 21)}
+          </div>
+          <span className="rounded-full border border-emerald-500/20 bg-emerald-500/[0.08] px-2.5 py-1 text-[10px] font-semibold text-emerald-300">
+            Siap diproses
+          </span>
+        </div>
+        <div className="mt-5 flex-1">
+          <p className="text-[10px] font-semibold uppercase tracking-[0.17em] text-zinc-500">{product.category}</p>
+          <h3 className="mt-2 min-h-12 text-base font-semibold leading-snug text-zinc-100">{product.title}</h3>
+          <p className="mt-2 flex items-center gap-1.5 text-xs text-zinc-500">
+            <BadgeCheck size={14} className="text-emerald-400" />
+            {product.duration}
+          </p>
+        </div>
+        <div className="mt-5 flex items-end justify-between gap-3 border-t border-white/[0.07] pt-4">
+          <div>
+            <p className="text-[10px] uppercase tracking-wider text-zinc-500">Mulai dari</p>
+            <p className="mt-1 text-lg font-bold tracking-tight text-white">{formatPrice(product.price)}</p>
+          </div>
+          <Button size="sm" onClick={() => startCheckout(product)} className="shrink-0">
+            Beli <ArrowRight size={14} />
+          </Button>
+        </div>
+      </motion.article>
+    );
+  }
+
+  const activeWhatsApp = settings.adminWA || defaultSettings.adminWA;
+
+  return (
+    <div className="min-h-screen">
+      <header className="sticky top-0 z-40 border-b border-white/[0.07] bg-[#09090b]/85 backdrop-blur-xl">
+        <div className="mx-auto flex h-[72px] max-w-7xl items-center justify-between gap-2 px-3 max-[360px]:gap-1 max-[360px]:px-2 sm:gap-4 sm:px-6">
+          <button
+            type="button"
+            onClick={() => setActiveTab('store')}
+            className="flex items-center gap-2 text-left sm:gap-3"
+            aria-label="Kembali ke toko 2akinoStore"
+          >
+            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-red-600 text-white shadow-lg shadow-red-950/50 max-[360px]:h-8 max-[360px]:w-8 sm:h-10 sm:w-10">
+              <MonitorPlay size={21} />
+            </span>
+            <span className="min-w-0">
+              <span className="block whitespace-nowrap text-sm font-black tracking-[0.06em] text-white max-[360px]:text-xs sm:text-base sm:tracking-[0.1em]">
+                2AKINO<span className="text-red-500">STORE</span>
+              </span>
+              <span className="hidden text-[10px] tracking-wide text-zinc-500 sm:block">Akun digital, tanpa ribet</span>
+            </span>
+          </button>
+
+          <nav className="flex shrink-0 items-center gap-1 rounded-xl border border-white/[0.07] bg-white/[0.025] p-1" aria-label="Navigasi utama">
+            {[
+              { id: 'store', label: 'Toko', icon: ShoppingBag },
+              { id: 'track', label: 'Cek Pesanan', icon: Search },
+            ].map(({ id, label, icon: Icon }) => (
+              <button
+                key={id}
+                type="button"
+                onClick={() => setActiveTab(id)}
+                className={`${id === 'store' ? 'hidden sm:flex' : 'flex'} h-9 items-center gap-2 rounded-lg px-2 text-xs font-semibold transition max-[360px]:px-1 sm:px-3 ${
+                  activeTab === id ? 'bg-white/10 text-white' : 'text-zinc-500 hover:text-zinc-200'
+                }`}
+              >
+                <Icon size={15} />
+                <span className="hidden sm:inline">{label}</span>
+              </button>
+            ))}
+            <button
+              type="button"
+              onClick={openAdminAccess}
+              className={`flex h-9 items-center gap-2 rounded-lg px-2 text-xs font-semibold transition max-[360px]:px-1 sm:px-3 ${
+                activeTab === 'admin' ? 'bg-white/10 text-white' : 'text-zinc-500 hover:text-zinc-200'
+              }`}
+            >
+              <Settings2 size={15} />
+              <span className="hidden sm:inline">Admin</span>
+            </button>
+          </nav>
+        </div>
+      </header>
+
+      <main className="mx-auto max-w-7xl px-4 pb-24 pt-8 sm:px-6 sm:pt-12">
+        {activeTab === 'store' && (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-12">
+            <section className="aurora magic-shimmer relative overflow-hidden rounded-[28px] border border-white/[0.09] px-6 py-10 shadow-glow sm:px-10 sm:py-14 lg:px-14">
+              <div className="absolute -right-12 -top-16 h-72 w-72 rounded-full bg-red-600/10 blur-3xl" />
+              <div className="relative max-w-3xl">
+                <div className="mb-5 inline-flex items-center gap-2 rounded-full border border-red-400/20 bg-red-500/[0.08] px-3 py-1.5 text-[11px] font-semibold text-red-200">
+                  <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-red-400" />
+                  Akun digital pilihan, transaksi mudah
+                </div>
+                <h1 className="max-w-2xl text-4xl font-black leading-[1.08] tracking-tight text-white sm:text-5xl lg:text-6xl">
+                  Hiburan premium,
+                  <span className="block bg-gradient-to-r from-red-400 via-rose-300 to-white bg-clip-text text-transparent">
+                    lebih simpel.
+                  </span>
+                </h1>
+                <p className="mt-5 max-w-xl text-sm leading-7 text-zinc-300 sm:text-base">
+                  Temukan akun streaming dan aplikasi digital favoritmu. Pembayaran QRIS, dibantu admin melalui WhatsApp.
+                </p>
+                <div className="mt-7 flex flex-wrap gap-3">
+                  <Button onClick={() => document.getElementById('catalog')?.scrollIntoView({ behavior: 'smooth' })}>
+                    Lihat katalog <ArrowRight size={16} />
+                  </Button>
+                  <a
+                    href={whatsappUrl(activeWhatsApp, 'Halo Admin 2akinoStore, saya ingin bertanya mengenai pemesanan akun digital.')}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex h-11 items-center gap-2 rounded-xl border border-white/10 bg-black/20 px-5 text-sm font-semibold text-zinc-200 transition hover:bg-white/[0.07]"
+                  >
+                    <Headphones size={16} /> Hubungi admin
+                  </a>
+                </div>
+                <div className="mt-9 flex flex-wrap gap-x-7 gap-y-3 border-t border-white/10 pt-5 text-xs text-zinc-400">
+                  <span className="flex items-center gap-2"><ShieldCheck size={15} className="text-emerald-400" /> Pilihan terkurasi</span>
+                  <span className="flex items-center gap-2"><WalletCards size={15} className="text-red-300" /> QRIS tersedia</span>
+                  <span className="flex items-center gap-2"><Headphones size={15} className="text-violet-300" /> Bantuan via WhatsApp</span>
+                </div>
+              </div>
+            </section>
+
+            <section id="catalog">
+              <SectionHeading
+                eyebrow="Katalog pilihan"
+                title="Pilih yang kamu suka"
+                description="Jelajahi paket digital pilihan dan temukan yang paling sesuai."
+                action={<span className="text-xs text-zinc-500">{visibleProducts.length} produk tersedia</span>}
+              />
+              <div className="scrollbar-none mb-6 flex gap-2 overflow-x-auto pb-2">
+                {['All', ...categories.map((category) => category.name)].map((name) => {
+                  const category = categories.find((item) => item.name === name);
+                  const active = selectedCategory === name;
+                  return (
+                    <button
+                      type="button"
+                      key={name}
+                      onClick={() => setSelectedCategory(name)}
+                      className={`flex h-10 shrink-0 items-center gap-2 rounded-xl border px-4 text-xs font-semibold transition ${
+                        active
+                          ? 'border-red-500/30 bg-red-600 text-white shadow-lg shadow-red-950/30'
+                          : 'border-white/[0.07] bg-white/[0.025] text-zinc-400 hover:border-white/15 hover:text-white'
+                      }`}
+                    >
+                      {name === 'All' ? <Package size={15} /> : iconFor(category?.icon, 15)}
+                      {name === 'All' ? 'Semua produk' : name}
+                    </button>
+                  );
+                })}
+              </div>
+              {visibleProducts.length ? (
+                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+                  {visibleProducts.map(renderProductCard)}
+                </div>
+              ) : (
+                <div className="rounded-2xl border border-dashed border-white/10 py-16 text-center text-sm text-zinc-500">
+                  Belum ada produk pada kategori ini.
+                </div>
+              )}
+            </section>
+
+            <section className="grid gap-4 md:grid-cols-3">
+              {[
+                { icon: WalletCards, title: 'Pembayaran praktis', text: 'Selesaikan pembayaran melalui QRIS dari aplikasi pilihan Anda.' },
+                { icon: BadgeCheck, title: 'Detail jelas', text: 'Informasi paket, harga, durasi, dan garansi tersedia sebelum membeli.' },
+                { icon: Headphones, title: 'Dibantu admin', text: 'Konfirmasi pesanan dan kirim bukti pembayaran dengan mudah via WhatsApp.' },
+              ].map(({ icon: Icon, title, text }) => (
+                <div key={title} className="rounded-2xl border border-white/[0.07] bg-white/[0.025] p-5">
+                  <Icon size={19} className="text-red-300" />
+                  <h3 className="mt-4 text-sm font-semibold text-white">{title}</h3>
+                  <p className="mt-2 text-xs leading-5 text-zinc-500">{text}</p>
+                </div>
+              ))}
+            </section>
+          </motion.div>
+        )}
+
+        {activeTab === 'track' && (
+          <motion.section
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="mx-auto max-w-2xl pt-5 sm:pt-12"
+          >
+            <div className="mb-8 text-center">
+              <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-2xl border border-red-500/20 bg-red-500/10 text-red-300">
+                <Search size={20} />
+              </div>
+              <p className="text-[11px] font-bold uppercase tracking-[0.22em] text-red-400">Pelacakan pesanan</p>
+              <h1 className="mt-2 text-3xl font-bold tracking-tight text-white">Cek detail pesanan</h1>
+              <p className="mt-3 text-sm text-zinc-400">Cari menggunakan ID invoice atau nomor WhatsApp saat transaksi.</p>
+            </div>
+            <div className="rounded-2xl border border-white/[0.08] bg-[#111114] p-4 sm:p-6">
+              <label htmlFor="track-query" className="text-xs font-semibold text-zinc-300">ID Invoice / Nomor WhatsApp</label>
+              <div className="mt-2 flex flex-col gap-2 sm:flex-row">
+                <input
+                  id="track-query"
+                  className={`${inputClass} mt-0 flex-1`}
+                  value={trackQuery}
+                  onChange={(event) => setTrackQuery(event.target.value)}
+                  placeholder="Contoh: INV-8921 atau 08123456789"
+                />
+                <Button onClick={() => setTrackQuery((value) => value.trim())}><Search size={16} /> Cari pesanan</Button>
+              </div>
+            </div>
+            {trackQuery.trim() && (
+              <div className="mt-5 space-y-3">
+                {matchedTransactions.length ? matchedTransactions.map((transaction) => (
+                  <article key={transaction.code} className="rounded-2xl border border-white/[0.08] bg-[#111114] p-5">
+                    <div className="flex flex-wrap items-start justify-between gap-4 border-b border-white/[0.07] pb-4">
+                      <div>
+                        <span className="font-mono text-xs font-bold text-red-300">{transaction.code}</span>
+                        <h2 className="mt-1 font-semibold text-white">{transaction.productTitle}</h2>
+                        <p className="mt-1 text-xs text-zinc-500">{transaction.date} · {transaction.customerName}</p>
+                      </div>
+                      <span className="rounded-full border border-emerald-500/20 bg-emerald-500/[0.08] px-3 py-1 text-[10px] font-bold uppercase tracking-wide text-emerald-300">Tercatat</span>
+                    </div>
+                    <a
+                      className="mt-4 flex h-10 items-center justify-center gap-2 rounded-xl bg-emerald-600 text-xs font-bold text-white transition hover:bg-emerald-500"
+                      href={whatsappUrl(activeWhatsApp, `Halo Admin, saya ingin konfirmasi ulang pesanan Invoice ${transaction.code} (${transaction.productTitle}).`)}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      <Headphones size={15} /> Konfirmasi via WhatsApp
+                    </a>
+                  </article>
+                )) : (
+                  <div className="rounded-2xl border border-white/[0.07] bg-white/[0.025] p-6 text-center text-sm text-zinc-400">
+                    Tidak ada pesanan ditemukan.
+                  </div>
+                )}
+              </div>
+            )}
+          </motion.section>
+        )}
+
+        {activeTab === 'admin' && isAdminLoggedIn && (
+          <motion.section initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>
+            <div className="mb-7 flex flex-wrap items-center justify-between gap-4 border-b border-white/[0.08] pb-6">
+              <div>
+                <p className="text-[11px] font-bold uppercase tracking-[0.22em] text-red-400">Workspace</p>
+                <h1 className="mt-2 text-2xl font-bold text-white">Dashboard admin</h1>
+                <p className="mt-1 text-sm text-zinc-500">Kelola katalog, transaksi, dan pengaturan toko.</p>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <Button variant="secondary" size="sm" onClick={() => setCategoryOpen(true)}><FolderPlus size={15} /> Kategori</Button>
+                <Button size="sm" onClick={openAddProduct}><Plus size={15} /> Produk</Button>
+                <Button variant="ghost" size="sm" onClick={logoutAdmin}>Keluar</Button>
+              </div>
+            </div>
+
+            <div className="mb-6 flex gap-1 overflow-x-auto border-b border-white/[0.07]">
+              {[
+                { id: 'products', label: 'Daftar produk', icon: Package },
+                { id: 'transactions', label: 'Transaksi', icon: WalletCards },
+                { id: 'settings', label: 'Pengaturan', icon: Settings2 },
+              ].map(({ id, label, icon: Icon }) => (
+                <button
+                  key={id}
+                  type="button"
+                  onClick={() => setAdminTab(id)}
+                  className={`flex shrink-0 items-center gap-2 border-b-2 px-4 py-3 text-xs font-semibold transition ${
+                    adminTab === id ? 'border-red-500 text-white' : 'border-transparent text-zinc-500 hover:text-zinc-200'
+                  }`}
+                >
+                  <Icon size={15} /> {label}
+                </button>
+              ))}
+            </div>
+
+            {adminTab === 'products' && (
+              <div className="space-y-5">
+                {categories.map((category) => {
+                  const categoryProducts = products.filter((product) => product.category.toLowerCase() === category.name.toLowerCase());
+                  return (
+                    <section key={category.name} className="rounded-2xl border border-white/[0.08] bg-[#111114] p-5">
+                      <div className="mb-4 flex items-center justify-between border-b border-white/[0.07] pb-4">
+                        <h2 className="flex items-center gap-2 text-sm font-semibold text-white">{iconFor(category.icon, 17)} {category.name}</h2>
+                        <span className="text-xs text-zinc-500">{categoryProducts.length} produk</span>
+                      </div>
+                      {categoryProducts.length ? (
+                        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                          {categoryProducts.map((product) => (
+                            <div key={product.id} className="flex items-start justify-between gap-3 rounded-xl border border-white/[0.06] bg-black/20 p-4">
+                              <div className="min-w-0">
+                                <p className="truncate text-xs font-semibold text-zinc-200">{product.title}</p>
+                                <p className="mt-1 text-[11px] text-zinc-500">{product.duration}</p>
+                                <p className="mt-3 text-sm font-bold text-red-300">{formatPrice(product.price)}</p>
+                              </div>
+                              <Button variant="danger" size="icon" className="h-8 w-8" onClick={() => deleteProduct(product.id)} aria-label={`Hapus ${product.title}`}>
+                                <Trash2 size={14} />
+                              </Button>
+                            </div>
+                          ))}
+                        </div>
+                      ) : <p className="text-xs italic text-zinc-600">Belum ada produk dalam kategori ini.</p>}
+                    </section>
+                  );
+                })}
+              </div>
+            )}
+
+            {adminTab === 'transactions' && (
+              <section className="overflow-hidden rounded-2xl border border-white/[0.08] bg-[#111114]">
+                <div className="flex flex-wrap items-center justify-between gap-4 border-b border-white/[0.07] p-5">
+                  <div>
+                    <h2 className="text-sm font-semibold text-white">Riwayat transaksi</h2>
+                    <p className="mt-1 text-xs text-zinc-500">{transactions.length} transaksi tercatat</p>
+                  </div>
+                  <Button variant="secondary" size="sm" onClick={downloadTransactions}><ArrowDownToLine size={15} /> Unduh CSV</Button>
+                </div>
+                {transactions.length ? (
+                  <div className="overflow-x-auto">
+                    <table className="w-full min-w-[720px] text-left text-xs">
+                      <thead className="bg-white/[0.025] text-[10px] uppercase tracking-wider text-zinc-500">
+                        <tr>{['Invoice', 'Tanggal', 'Pembeli', 'Produk', 'Total', 'WhatsApp'].map((label) => <th key={label} className="px-4 py-3 font-semibold">{label}</th>)}</tr>
+                      </thead>
+                      <tbody className="divide-y divide-white/[0.06] text-zinc-300">
+                        {transactions.map((transaction, index) => (
+                          <tr key={`${transaction.code}-${index}`}>
+                            <td className="px-4 py-4 font-mono font-semibold text-red-300">{transaction.code}</td>
+                            <td className="px-4 py-4 text-zinc-500">{transaction.date}</td>
+                            <td className="px-4 py-4">{transaction.customerName}<span className="mt-1 block text-[10px] text-zinc-500">{transaction.customerWA}</span></td>
+                            <td className="px-4 py-4">{transaction.productTitle}</td>
+                            <td className="px-4 py-4 font-semibold text-emerald-300">{formatPrice(transaction.amount)}</td>
+                            <td className="px-4 py-4"><a className="font-semibold text-emerald-300 hover:text-emerald-200" href={whatsappUrl(transaction.customerWA, `Halo ${transaction.customerName}, terkait pesanan Invoice ${transaction.code} (${transaction.productTitle}).`)} target="_blank" rel="noreferrer">Chat pembeli</a></td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : <p className="p-8 text-center text-sm text-zinc-500">Belum ada transaksi.</p>}
+              </section>
+            )}
+
+            {adminTab === 'settings' && (
+              <form onSubmit={saveAdminSettings} className="max-w-xl space-y-6 rounded-2xl border border-white/[0.08] bg-[#111114] p-5 sm:p-6">
+                <div>
+                  <label htmlFor="admin-wa" className="flex items-center gap-2 text-sm font-semibold text-white"><Headphones size={16} className="text-emerald-400" /> Nomor WhatsApp admin</label>
+                  <p className="mt-1 text-xs text-zinc-500">Gunakan format internasional, misalnya 628123456789.</p>
+                  <input id="admin-wa" className={inputClass} value={adminWANumber} onChange={(event) => setAdminWANumber(event.target.value)} placeholder="628123456789" />
+                </div>
+                <div className="border-t border-white/[0.07] pt-5">
+                  <label htmlFor="admin-new-password" className="flex items-center gap-2 text-sm font-semibold text-white"><KeyRound size={16} className="text-amber-300" /> Ubah password admin</label>
+                  <p className="mt-1 text-xs text-zinc-500">Kosongkan jika tidak ingin mengubah password.</p>
+                  <input id="admin-new-password" type="password" className={inputClass} value={newPassword} onChange={(event) => setNewPassword(event.target.value)} placeholder="Password baru" />
+                </div>
+                <Button type="submit"><Check size={16} /> Simpan pengaturan</Button>
+              </form>
+            )}
+          </motion.section>
+        )}
+      </main>
+
+      <footer className="border-t border-white/[0.07]">
+        <div className="mx-auto flex max-w-7xl flex-col gap-2 px-4 py-6 text-xs text-zinc-600 sm:flex-row sm:items-center sm:justify-between sm:px-6">
+          <span>© {new Date().getFullYear()} 2akinoStore. Akun digital pilihanmu.</span>
+          <span className="flex items-center gap-1.5"><ShieldCheck size={13} /> Butuh bantuan? Hubungi admin via WhatsApp.</span>
+        </div>
+      </footer>
+
+      <a
+        href={whatsappUrl(activeWhatsApp, 'Halo Admin 2akinoStore, saya ingin bertanya mengenai pemesanan akun digital.')}
+        target="_blank"
+        rel="noreferrer"
+        aria-label="Hubungi admin melalui WhatsApp"
+        className="fixed bottom-5 right-5 z-30 flex h-12 w-12 items-center justify-center rounded-full bg-emerald-500 text-white shadow-xl shadow-emerald-950/40 transition hover:scale-105 hover:bg-emerald-400"
+      >
+        <Headphones size={20} />
+      </a>
+
+      <Dialog open={loginOpen} onOpenChange={setLoginOpen}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Masuk dashboard admin</DialogTitle>
+            <DialogDescription>Masukkan password admin untuk mengelola toko.</DialogDescription>
+          </DialogHeader>
+          <form onSubmit={handleAdminLogin} className="space-y-4">
+            <label htmlFor="admin-password" className="text-xs font-semibold text-zinc-300">Password admin</label>
+            <input
+              id="admin-password"
+              autoFocus
+              type="password"
+              className={inputClass}
+              value={adminPassword}
+              onChange={(event) => setAdminPassword(event.target.value)}
+              placeholder="Masukkan password"
+            />
+            <Button className="w-full" type="submit"><LockKeyhole size={16} /> Masuk</Button>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={categoryOpen} onOpenChange={setCategoryOpen}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Tambah kategori</DialogTitle>
+            <DialogDescription>Buat kategori baru untuk mengelompokkan produk toko.</DialogDescription>
+          </DialogHeader>
+          <form onSubmit={addCategory} className="space-y-4">
+            <label htmlFor="category-name" className="text-xs font-semibold text-zinc-300">Nama kategori</label>
+            <input id="category-name" autoFocus className={inputClass} value={categoryName} onChange={(event) => setCategoryName(event.target.value)} placeholder="Contoh: Viu / WeTV" />
+            <div>
+              <label htmlFor="category-icon" className="text-xs font-semibold text-zinc-300">Ikon kategori</label>
+              <select id="category-icon" className={inputClass} value={categoryIcon} onChange={(event) => setCategoryIcon(event.target.value)}>
+                <option value="tv">Streaming</option>
+                <option value="film">Film</option>
+                <option value="spotify">Musik</option>
+                <option value="youtube">YouTube</option>
+                <option value="video">Video editor</option>
+                <option value="iqiyi">Drama</option>
+                <option value="canva">Desain</option>
+                <option value="disney">Hiburan</option>
+              </select>
+            </div>
+            <Button className="w-full" type="submit"><FolderPlus size={16} /> Simpan kategori</Button>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={productOpen} onOpenChange={setProductOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Tambah produk</DialogTitle>
+            <DialogDescription>Masukkan informasi paket baru untuk katalog.</DialogDescription>
+          </DialogHeader>
+          <form onSubmit={addProduct} className="space-y-3">
+            <div>
+              <label htmlFor="product-category" className="text-xs font-semibold text-zinc-300">Kategori</label>
+              <select id="product-category" className={inputClass} value={productCategory} onChange={(event) => setProductCategory(event.target.value)}>
+                {categories.map((category) => <option key={category.name} value={category.name}>{category.name}</option>)}
+              </select>
+            </div>
+            <div>
+              <label htmlFor="product-title" className="text-xs font-semibold text-zinc-300">Nama produk</label>
+              <input id="product-title" className={inputClass} value={productTitle} onChange={(event) => setProductTitle(event.target.value)} placeholder="Contoh: Paket Premium 1 Bulan" />
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div>
+                <label htmlFor="product-price" className="text-xs font-semibold text-zinc-300">Harga (Rp)</label>
+                <input id="product-price" type="number" min="1" className={inputClass} value={productPrice} onChange={(event) => setProductPrice(event.target.value)} placeholder="15000" />
+              </div>
+              <div>
+                <label htmlFor="product-duration" className="text-xs font-semibold text-zinc-300">Durasi / garansi</label>
+                <input id="product-duration" className={inputClass} value={productDuration} onChange={(event) => setProductDuration(event.target.value)} placeholder="30 Hari Garansi" />
+              </div>
+            </div>
+            <Button className="mt-2 w-full" type="submit"><Plus size={16} /> Simpan produk</Button>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={Boolean(checkoutProduct)} onOpenChange={(open) => !open && setCheckoutProduct(null)}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Pembayaran QRIS</DialogTitle>
+            <DialogDescription>
+              {checkoutProduct ? `${checkoutProduct.title} · ${formatPrice(checkoutProduct.price)}` : 'Selesaikan pesanan Anda.'}
+            </DialogDescription>
+          </DialogHeader>
+          {checkoutProduct && checkoutStep === 'form' && (
+            <form onSubmit={processToQRIS} className="space-y-4">
+              <div className="flex items-center gap-3 rounded-2xl border border-white/[0.07] bg-white/[0.03] p-4">
+                <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-red-500/10">{iconFor(checkoutProduct.icon, 20)}</span>
+                <div>
+                  <p className="text-sm font-semibold text-white">{checkoutProduct.title}</p>
+                  <p className="mt-1 text-xs text-zinc-500">{checkoutProduct.duration}</p>
+                </div>
+              </div>
+              <div>
+                <label htmlFor="customer-name" className="text-xs font-semibold text-zinc-300">Nama lengkap *</label>
+                <input id="customer-name" autoFocus required className={inputClass} value={customerName} onChange={(event) => setCustomerName(event.target.value)} placeholder="Nama Anda" />
+              </div>
+              <div>
+                <label htmlFor="customer-wa" className="text-xs font-semibold text-zinc-300">Nomor WhatsApp aktif *</label>
+                <input id="customer-wa" type="tel" required className={inputClass} value={customerWA} onChange={(event) => setCustomerWA(event.target.value)} placeholder="Contoh: 08123456789" />
+              </div>
+              <Button className="w-full" type="submit">Lanjut bayar via QRIS <ArrowRight size={16} /></Button>
+            </form>
+          )}
+          {checkoutProduct && checkoutStep === 'qris' && invoice && (
+            <div className="space-y-4 text-center">
+              <div className="rounded-xl border border-red-500/20 bg-red-500/[0.07] p-3 text-xs leading-5 text-red-100">
+                Scan QRIS berikut menggunakan GoPay, OVO, DANA, ShopeePay, BCA, Mandiri, atau e-wallet lainnya.
+              </div>
+              <div className="mx-auto w-fit rounded-3xl border-4 border-zinc-200 bg-white p-4 text-zinc-900 shadow-xl">
+                <div className="mb-3 flex items-center justify-center gap-1 text-xs font-black tracking-wider text-red-600"><QrCode size={15} /> QRIS NATIONAL</div>
+                <img src={qrisImage} alt="Kode QRIS 2akinoStore" className="h-52 w-52 rounded-xl object-contain" />
+                <p className="mt-3 text-[10px] font-semibold text-zinc-500">2AKINOSTORE DIGITAL</p>
+                <p className="mt-0.5 text-lg font-black">{formatPrice(checkoutProduct.price)}</p>
+                <p className="font-mono text-[10px] text-zinc-400">{invoice.code}</p>
+              </div>
+              <div className="flex items-center justify-between rounded-xl border border-white/[0.07] bg-white/[0.025] px-4 py-3 text-left">
+                <span className="text-xs text-zinc-500">Nomor invoice</span>
+                <span className="font-mono text-xs font-bold text-amber-300">{invoice.code}</span>
+              </div>
+              <Button variant="success" className="w-full" onClick={confirmPayment}><CheckCircle2 size={16} /> Selesai bayar (konfirmasi)</Button>
+              <p className="text-[10px] leading-relaxed text-zinc-600">Tekan konfirmasi setelah pembayaran berhasil dilakukan.</p>
+            </div>
+          )}
+          {checkoutProduct && checkoutStep === 'success' && invoice && (
+            <div className="space-y-5">
+              <div className="text-center">
+                <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full border border-emerald-500/20 bg-emerald-500/10 text-emerald-300"><CheckCircle2 size={28} /></div>
+                <h3 className="mt-4 text-lg font-bold text-white">Pembayaran tercatat</h3>
+                <p className="mt-1 text-xs text-zinc-400">Invoice <span className="font-mono font-bold text-amber-300">{invoice.code}</span></p>
+              </div>
+              <div className="rounded-2xl border border-amber-500/20 bg-amber-500/[0.06] p-4 text-xs leading-relaxed text-zinc-300">
+                <p className="mb-2 font-bold text-amber-300">Penting: konfirmasi pesanan</p>
+                Lampirkan screenshot atau foto bukti pembayaran QRIS saat mengirim pesan ke admin. Admin akan memverifikasi pembayaran dan mengirimkan detail akun melalui WhatsApp.
+              </div>
+              <a
+                className="flex h-12 items-center justify-center gap-2 rounded-xl bg-emerald-600 text-sm font-bold text-white transition hover:bg-emerald-500"
+                href={whatsappUrl(activeWhatsApp, `Halo Admin 2akinoStore, saya sudah melakukan pembayaran via QRIS!\n\nInvoice: ${invoice.code}\nProduk: ${invoice.productTitle}\nNama: ${invoice.customerName}\nTotal: ${formatPrice(invoice.amount)}\n\nBerikut saya kirimkan screenshot bukti pembayarannya. Mohon kirimkan akun pesanan saya. Terima kasih!`)}
+                target="_blank"
+                rel="noreferrer"
+              >
+                <Headphones size={18} /> Kirim bukti pembayaran ke WhatsApp
+              </a>
+              <Button variant="secondary" className="w-full" onClick={() => { setCheckoutProduct(null); setActiveTab('store'); }}>
+                Kembali ke toko
+              </Button>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      <AnimatePresence>
+        {notice && (
+          <motion.div
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 8 }}
+            role="status"
+            className="fixed bottom-5 left-1/2 z-[60] flex max-w-[calc(100%-2rem)] -translate-x-1/2 items-center gap-2 rounded-xl border border-white/10 bg-zinc-900 px-4 py-3 text-xs font-medium text-zinc-100 shadow-2xl"
+          >
+            <CheckCircle2 size={15} className="shrink-0 text-emerald-400" /> {notice}
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
+export default App;
