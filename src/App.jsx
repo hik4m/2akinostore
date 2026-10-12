@@ -28,6 +28,7 @@ import {
   WalletCards,
   Youtube,
 } from 'lucide-react';
+import { QRCodeSVG } from 'qrcode.react';
 import qrisImage from '../DANA.jpeg';
 import { Button } from './components/ui/button.jsx';
 import {
@@ -37,6 +38,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from './components/ui/dialog.jsx';
+import { createDynamicQris, validateQrisPayload } from './lib/qris.js';
 
 const STORAGE_KEY_CATS = '2akinostore_cats_v12';
 const STORAGE_KEY_PRODS = '2akinostore_products_v12';
@@ -123,6 +125,9 @@ function App() {
   const [checkoutProduct, setCheckoutProduct] = useState(null);
   const [checkoutStep, setCheckoutStep] = useState('form');
   const [invoice, setInvoice] = useState(null);
+  const [staticQrisPayload, setStaticQrisPayload] = useState('');
+  const [qrisSourceError, setQrisSourceError] = useState('');
+  const [dynamicQrisPayload, setDynamicQrisPayload] = useState('');
   const [customerName, setCustomerName] = useState('');
   const [customerWA, setCustomerWA] = useState('');
   const [adminPassword, setAdminPassword] = useState('');
@@ -149,6 +154,23 @@ function App() {
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY_SETTINGS, JSON.stringify(settings));
   }, [settings]);
+  useEffect(() => {
+    let cancelled = false;
+    import('@zxing/browser')
+      .then(({ BrowserQRCodeReader }) => new BrowserQRCodeReader().decodeFromImageUrl(qrisImage))
+      .then((result) => {
+        if (!cancelled) setStaticQrisPayload(result.getText());
+      })
+      .catch((error) => {
+        console.error('Unable to decode the configured static QRIS image.', error);
+        if (!cancelled) {
+          setQrisSourceError('Kode QRIS toko tidak dapat dibaca. Silakan hubungi admin.');
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
   useEffect(() => {
     if (!notice) return undefined;
     const timeout = window.setTimeout(() => setNotice(''), 3200);
@@ -198,6 +220,7 @@ function App() {
     setCheckoutProduct(product);
     setCheckoutStep('form');
     setInvoice(null);
+    setDynamicQrisPayload('');
     setCustomerName('');
     setCustomerWA('');
   }
@@ -209,23 +232,57 @@ function App() {
       return;
     }
     if (!checkoutProduct) return;
-    const nextInvoice = {
-      code: `INV-${Math.floor(100000 + Math.random() * 900000)}`,
-      date: new Date().toLocaleString('id-ID'),
-      customerName: customerName.trim(),
-      customerWA: customerWA.trim(),
-      productId: checkoutProduct.id,
-      productTitle: checkoutProduct.title,
-      amount: checkoutProduct.price,
-    };
-    setInvoice(nextInvoice);
-    setCheckoutStep('qris');
+    if (!staticQrisPayload) {
+      setNotice(qrisSourceError || 'Sedang memuat kode QRIS toko. Coba lagi sebentar.');
+      return;
+    }
+
+    setQrisSourceError('');
+    try {
+      const dynamicPayload = createDynamicQris(staticQrisPayload, checkoutProduct.price);
+      if (validateQrisPayload(dynamicPayload) !== checkoutProduct.price) {
+        throw new Error('Nominal pada QRIS tidak sesuai dengan total pesanan.');
+      }
+      const nextInvoice = {
+        code: `INV-${Math.floor(100000 + Math.random() * 900000)}`,
+        date: new Date().toLocaleString('id-ID'),
+        customerName: customerName.trim(),
+        customerWA: customerWA.trim(),
+        productId: checkoutProduct.id,
+        productTitle: checkoutProduct.title,
+        amount: checkoutProduct.price,
+        status: 'pending',
+      };
+      setInvoice(nextInvoice);
+      setDynamicQrisPayload(dynamicPayload);
+      setCheckoutStep('qris');
+    } catch (error) {
+      console.error('Unable to create an amount-specific dynamic QRIS code.', error);
+      setQrisSourceError(error instanceof Error ? error.message : 'QRIS dinamis gagal dibuat. Silakan hubungi admin.');
+    }
   }
 
   function confirmPayment() {
     if (!invoice) return;
     setTransactions((current) => [invoice, ...current]);
     setCheckoutStep('success');
+  }
+
+  function verifyTransaction(invoiceCode) {
+    const transaction = transactions.find((item) => item.code === invoiceCode);
+    if (!transaction || transaction.status === 'paid') return;
+    const confirmed = window.confirm(
+      `Pastikan pembayaran ${formatPrice(transaction.amount)} untuk invoice ${transaction.code} sudah diterima di akun QRIS merchant. Lanjutkan verifikasi manual?`,
+    );
+    if (!confirmed) return;
+    setTransactions((current) =>
+      current.map((item) =>
+        item.code === invoiceCode
+          ? { ...item, status: 'paid', verifiedAt: new Date().toLocaleString('id-ID') }
+          : item,
+      ),
+    );
+    setNotice(`Invoice ${invoiceCode} ditandai terverifikasi oleh admin.`);
   }
 
   function addCategory(event) {
@@ -304,7 +361,7 @@ function App() {
       return;
     }
     const rows = [
-      ['Invoice', 'Tanggal', 'Nama Pembeli', 'Nomor WA', 'Produk', 'Total Harga'],
+      ['Invoice', 'Tanggal', 'Nama Pembeli', 'Nomor WA', 'Produk', 'Total Harga', 'Status'],
       ...transactions.map((transaction) => [
         transaction.code,
         transaction.date,
@@ -312,6 +369,7 @@ function App() {
         transaction.customerWA,
         transaction.productTitle,
         transaction.amount,
+        transaction.status === 'paid' ? 'Terverifikasi admin' : 'Menunggu verifikasi admin',
       ]),
     ];
     const csv = rows
@@ -552,7 +610,13 @@ function App() {
                         <h2 className="mt-1 font-semibold text-white">{transaction.productTitle}</h2>
                         <p className="mt-1 text-xs text-zinc-500">{transaction.date} · {transaction.customerName}</p>
                       </div>
-                      <span className="rounded-full border border-emerald-500/20 bg-emerald-500/[0.08] px-3 py-1 text-[10px] font-bold uppercase tracking-wide text-emerald-300">Tercatat</span>
+                      <span className={`rounded-full border px-3 py-1 text-[10px] font-bold uppercase tracking-wide ${
+                        transaction.status === 'paid'
+                          ? 'border-emerald-500/20 bg-emerald-500/[0.08] text-emerald-300'
+                          : 'border-amber-500/20 bg-amber-500/[0.08] text-amber-300'
+                      }`}>
+                        {transaction.status === 'paid' ? 'Terverifikasi admin' : 'Menunggu verifikasi'}
+                      </span>
                     </div>
                     <a
                       className="mt-4 flex h-10 items-center justify-center gap-2 rounded-xl bg-emerald-600 text-xs font-bold text-white transition hover:bg-emerald-500"
@@ -652,7 +716,7 @@ function App() {
                   <div className="overflow-x-auto">
                     <table className="w-full min-w-[720px] text-left text-xs">
                       <thead className="bg-white/[0.025] text-[10px] uppercase tracking-wider text-zinc-500">
-                        <tr>{['Invoice', 'Tanggal', 'Pembeli', 'Produk', 'Total', 'WhatsApp'].map((label) => <th key={label} className="px-4 py-3 font-semibold">{label}</th>)}</tr>
+                        <tr>{['Invoice', 'Tanggal', 'Pembeli', 'Produk', 'Total', 'Status', 'Aksi'].map((label) => <th key={label} className="px-4 py-3 font-semibold">{label}</th>)}</tr>
                       </thead>
                       <tbody className="divide-y divide-white/[0.06] text-zinc-300">
                         {transactions.map((transaction, index) => (
@@ -662,7 +726,23 @@ function App() {
                             <td className="px-4 py-4">{transaction.customerName}<span className="mt-1 block text-[10px] text-zinc-500">{transaction.customerWA}</span></td>
                             <td className="px-4 py-4">{transaction.productTitle}</td>
                             <td className="px-4 py-4 font-semibold text-emerald-300">{formatPrice(transaction.amount)}</td>
-                            <td className="px-4 py-4"><a className="font-semibold text-emerald-300 hover:text-emerald-200" href={whatsappUrl(transaction.customerWA, `Halo ${transaction.customerName}, terkait pesanan Invoice ${transaction.code} (${transaction.productTitle}).`)} target="_blank" rel="noreferrer">Chat pembeli</a></td>
+                            <td className="px-4 py-4">
+                              <span className={`whitespace-nowrap rounded-full border px-2.5 py-1 text-[10px] font-bold ${
+                                transaction.status === 'paid'
+                                  ? 'border-emerald-500/20 bg-emerald-500/[0.08] text-emerald-300'
+                                  : 'border-amber-500/20 bg-amber-500/[0.08] text-amber-300'
+                              }`}>
+                                {transaction.status === 'paid' ? 'Terverifikasi' : 'Menunggu'}
+                              </span>
+                            </td>
+                            <td className="space-y-2 px-4 py-4">
+                              {transaction.status !== 'paid' && (
+                                <Button variant="success" size="sm" onClick={() => verifyTransaction(transaction.code)}>
+                                  <CheckCircle2 size={14} /> Verifikasi manual
+                                </Button>
+                              )}
+                              <a className="block whitespace-nowrap font-semibold text-emerald-300 hover:text-emerald-200" href={whatsappUrl(transaction.customerWA, `Halo ${transaction.customerName}, terkait pesanan Invoice ${transaction.code} (${transaction.productTitle}).`)} target="_blank" rel="noreferrer">Chat pembeli</a>
+                            </td>
                           </tr>
                         ))}
                       </tbody>
@@ -814,43 +894,60 @@ function App() {
                 <label htmlFor="customer-wa" className="text-xs font-semibold text-zinc-300">Nomor WhatsApp aktif *</label>
                 <input id="customer-wa" type="tel" required className={inputClass} value={customerWA} onChange={(event) => setCustomerWA(event.target.value)} placeholder="Contoh: 08123456789" />
               </div>
-              <Button className="w-full" type="submit">Lanjut bayar via QRIS <ArrowRight size={16} /></Button>
+              {qrisSourceError && (
+                <p role="alert" className="rounded-xl border border-red-500/20 bg-red-500/[0.07] p-3 text-xs leading-relaxed text-red-200">
+                  {qrisSourceError}
+                </p>
+              )}
+              <Button className="w-full" type="submit" disabled={!staticQrisPayload}>
+                {staticQrisPayload ? 'Lanjut bayar via QRIS' : 'Memuat QRIS toko…'}
+                <ArrowRight size={16} />
+              </Button>
             </form>
           )}
           {checkoutProduct && checkoutStep === 'qris' && invoice && (
             <div className="space-y-4 text-center">
               <div className="rounded-xl border border-red-500/20 bg-red-500/[0.07] p-3 text-xs leading-5 text-red-100">
-                Scan QRIS berikut menggunakan GoPay, OVO, DANA, ShopeePay, BCA, Mandiri, atau e-wallet lainnya.
+                Scan QRIS dinamis ini menggunakan GoPay, OVO, DANA, ShopeePay, BCA, Mandiri, atau e-wallet lainnya. Nominal dikunci sesuai total pesanan.
               </div>
-              <div className="mx-auto w-fit rounded-3xl border-4 border-zinc-200 bg-white p-4 text-zinc-900 shadow-xl">
+              <div className="mx-auto w-fit max-w-full rounded-3xl border-4 border-zinc-200 bg-white p-4 text-zinc-900 shadow-xl">
                 <div className="mb-3 flex items-center justify-center gap-1 text-xs font-black tracking-wider text-red-600"><QrCode size={15} /> QRIS NATIONAL</div>
-                <img src={qrisImage} alt="Kode QRIS 2akinoStore" className="h-52 w-52 rounded-xl object-contain" />
+                <QRCodeSVG
+                  id="dynamic-qris-code"
+                  value={dynamicQrisPayload}
+                  size={208}
+                  level="M"
+                  marginSize={2}
+                  bgColor="#ffffff"
+                  fgColor="#09090b"
+                  title={`QRIS dinamis sebesar ${formatPrice(invoice.amount)}`}
+                />
                 <p className="mt-3 text-[10px] font-semibold text-zinc-500">2AKINOSTORE DIGITAL</p>
-                <p className="mt-0.5 text-lg font-black">{formatPrice(checkoutProduct.price)}</p>
+                <p className="mt-0.5 text-lg font-black">{formatPrice(invoice.amount)}</p>
                 <p className="font-mono text-[10px] text-zinc-400">{invoice.code}</p>
               </div>
               <div className="flex items-center justify-between rounded-xl border border-white/[0.07] bg-white/[0.025] px-4 py-3 text-left">
                 <span className="text-xs text-zinc-500">Nomor invoice</span>
                 <span className="font-mono text-xs font-bold text-amber-300">{invoice.code}</span>
               </div>
-              <Button variant="success" className="w-full" onClick={confirmPayment}><CheckCircle2 size={16} /> Selesai bayar (konfirmasi)</Button>
-              <p className="text-[10px] leading-relaxed text-zinc-600">Tekan konfirmasi setelah pembayaran berhasil dilakukan.</p>
+              <Button variant="success" className="w-full" onClick={confirmPayment}><CheckCircle2 size={16} /> Saya sudah membayar</Button>
+              <p className="text-[10px] leading-relaxed text-zinc-500">Status tetap menunggu sampai admin memeriksa pembayaran masuk dan mencocokkan nominal.</p>
             </div>
           )}
           {checkoutProduct && checkoutStep === 'success' && invoice && (
             <div className="space-y-5">
               <div className="text-center">
-                <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full border border-emerald-500/20 bg-emerald-500/10 text-emerald-300"><CheckCircle2 size={28} /></div>
-                <h3 className="mt-4 text-lg font-bold text-white">Pembayaran tercatat</h3>
+                <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full border border-amber-500/20 bg-amber-500/10 text-amber-300"><CheckCircle2 size={28} /></div>
+                <h3 className="mt-4 text-lg font-bold text-white">Menunggu verifikasi admin</h3>
                 <p className="mt-1 text-xs text-zinc-400">Invoice <span className="font-mono font-bold text-amber-300">{invoice.code}</span></p>
               </div>
               <div className="rounded-2xl border border-amber-500/20 bg-amber-500/[0.06] p-4 text-xs leading-relaxed text-zinc-300">
-                <p className="mb-2 font-bold text-amber-300">Penting: konfirmasi pesanan</p>
-                Lampirkan screenshot atau foto bukti pembayaran QRIS saat mengirim pesan ke admin. Admin akan memverifikasi pembayaran dan mengirimkan detail akun melalui WhatsApp.
+                <p className="mb-2 font-bold text-amber-300">Pembayaran belum diverifikasi</p>
+                Pesanan tidak ditandai lunas oleh tombol ini. Kirim bukti pembayaran kepada admin; status baru berubah setelah admin mencocokkan pembayaran masuk sebesar {formatPrice(invoice.amount)}.
               </div>
               <a
                 className="flex h-12 items-center justify-center gap-2 rounded-xl bg-emerald-600 text-sm font-bold text-white transition hover:bg-emerald-500"
-                href={whatsappUrl(activeWhatsApp, `Halo Admin 2akinoStore, saya sudah melakukan pembayaran via QRIS!\n\nInvoice: ${invoice.code}\nProduk: ${invoice.productTitle}\nNama: ${invoice.customerName}\nTotal: ${formatPrice(invoice.amount)}\n\nBerikut saya kirimkan screenshot bukti pembayarannya. Mohon kirimkan akun pesanan saya. Terima kasih!`)}
+                href={whatsappUrl(activeWhatsApp, `Halo Admin 2akinoStore, saya sudah melakukan pembayaran via QRIS dan meminta verifikasi manual.\n\nInvoice: ${invoice.code}\nProduk: ${invoice.productTitle}\nNama: ${invoice.customerName}\nTotal yang harus dibayar: ${formatPrice(invoice.amount)}\n\nBerikut saya kirimkan screenshot bukti pembayarannya. Mohon verifikasi pembayaran dan pesanan saya. Terima kasih!`)}
                 target="_blank"
                 rel="noreferrer"
               >
