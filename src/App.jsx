@@ -73,7 +73,7 @@ const defaultProducts = [
 const defaultSettings = { adminWA: '6285111219046', adminPass: '0987654321' };
 const currency = new Intl.NumberFormat('id-ID');
 const inputClass =
-  'mt-2 h-11 w-full rounded-xl border border-white/10 bg-black/30 px-4 text-sm text-white outline-none transition placeholder:text-zinc-600 focus:border-red-500/70 focus:ring-2 focus:ring-red-500/15';
+  'mt-2 h-11 w-full rounded-xl border border-white/15 bg-black/40 px-4 text-sm text-white outline-none transition placeholder:text-zinc-400 focus:border-red-500/70 focus:ring-2 focus:ring-red-500/15';
 
 function readStorage(key, fallback) {
   const value = localStorage.getItem(key);
@@ -199,6 +199,7 @@ function App() {
   const [productDuration, setProductDuration] = useState('');
   const [productStock, setProductStock] = useState('');
   const [productSearchQuery, setProductSearchQuery] = useState('');
+  const [catalogSearchQuery, setCatalogSearchQuery] = useState('');
   const [stockDrafts, setStockDrafts] = useState({});
   const [trackQuery, setTrackQuery] = useState('');
   const [notice, setNotice] = useState('');
@@ -239,9 +240,12 @@ function App() {
   }, [notice]);
 
   const visibleProducts = useMemo(() => {
-    if (selectedCategory === 'All') return products;
-    return products.filter((product) => product.category.toLowerCase() === selectedCategory.toLowerCase());
-  }, [products, selectedCategory]);
+    return filterProducts(products, catalogSearchQuery).filter(
+      (product) =>
+        selectedCategory === 'All' ||
+        product.category.toLowerCase() === selectedCategory.toLowerCase(),
+    );
+  }, [catalogSearchQuery, products, selectedCategory]);
 
   const matchedTransactions = useMemo(() => {
     const query = trackQuery.trim().toLowerCase();
@@ -639,9 +643,33 @@ function App() {
                 eyebrow="Katalog pilihan"
                 title="Pilih yang kamu suka"
                 description="Jelajahi paket digital pilihan dan temukan yang paling sesuai."
-                action={<span className="text-xs text-zinc-500">{visibleProducts.length} produk tersedia</span>}
+                action={
+                  <span className="text-xs text-zinc-500" aria-live="polite">
+                    {visibleProducts.length} produk ditemukan
+                  </span>
+                }
               />
-              <div className="scrollbar-none mb-6 flex gap-2 overflow-x-auto pb-2">
+              <div className="mb-5 rounded-2xl border border-white/[0.08] bg-[#111114] p-4 sm:p-5">
+                <label htmlFor="catalog-search" className="text-xs font-semibold text-zinc-300">
+                  Cari produk
+                </label>
+                <div className="relative mt-2">
+                  <Search
+                    size={16}
+                    className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500"
+                    aria-hidden="true"
+                  />
+                  <input
+                    id="catalog-search"
+                    type="search"
+                    className={`${inputClass} mt-0 pl-10`}
+                    value={catalogSearchQuery}
+                    onChange={(event) => setCatalogSearchQuery(event.target.value)}
+                    placeholder="Cari nama produk, kategori, atau durasi..."
+                  />
+                </div>
+              </div>
+              <div className="scrollbar-none mb-6 flex gap-2 overflow-x-auto pb-2" role="group" aria-label="Filter kategori produk">
                 {['All', ...categories.map((category) => category.name)].map((name) => {
                   const category = categories.find((item) => item.name === name);
                   const active = selectedCategory === name;
@@ -650,10 +678,10 @@ function App() {
                       type="button"
                       key={name}
                       onClick={() => setSelectedCategory(name)}
-                      className={`flex h-10 shrink-0 items-center gap-2 rounded-xl border px-4 text-xs font-semibold transition ${
+                      className={`flex h-10 shrink-0 items-center gap-2 rounded-xl border border-solid px-4 text-xs font-semibold transition ${
                         active
-                          ? 'border-red-500/30 bg-red-600 text-white shadow-lg shadow-red-950/30'
-                          : 'border-white/[0.07] bg-white/[0.025] text-zinc-400 hover:border-white/15 hover:text-white'
+                          ? '!border-red-500/40 bg-red-600 text-white shadow-lg shadow-red-950/30'
+                          : '!border-white/20 bg-white/[0.04] text-zinc-200 hover:!border-white/40 hover:bg-white/[0.08] hover:text-white'
                       }`}
                     >
                       {name === 'All' ? <Package size={15} /> : iconFor(category?.icon, 15)}
@@ -667,8 +695,28 @@ function App() {
                   {visibleProducts.map(renderProductCard)}
                 </div>
               ) : (
-                <div className="rounded-2xl border border-dashed border-white/10 py-16 text-center text-sm text-zinc-500">
-                  Belum ada produk pada kategori ini.
+                <div className="rounded-2xl border border-dashed border-white/10 py-16 text-center">
+                  <p className="text-sm font-semibold text-zinc-300">
+                    {catalogSearchQuery.trim() ? 'Produk tidak ditemukan' : 'Belum ada produk pada kategori ini'}
+                  </p>
+                  <p className="mt-1 text-xs text-zinc-500">
+                    {catalogSearchQuery.trim()
+                      ? 'Coba kata kunci lain atau ubah filter kategori.'
+                      : 'Pilih kategori lain untuk melihat produk yang tersedia.'}
+                  </p>
+                  {(catalogSearchQuery.trim() || selectedCategory !== 'All') && (
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      className="mt-4"
+                      onClick={() => {
+                        setCatalogSearchQuery('');
+                        setSelectedCategory('All');
+                      }}
+                    >
+                      Hapus pencarian dan filter
+                    </Button>
+                  )}
                 </div>
               )}
             </section>
