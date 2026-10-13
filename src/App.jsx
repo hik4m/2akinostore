@@ -7,6 +7,7 @@ import {
   Check,
   CheckCircle2,
   Clapperboard,
+  Clock3,
   Film,
   FolderPlus,
   Headphones,
@@ -44,6 +45,10 @@ import {
   removeEmptyCategory,
 } from './lib/catalog.js';
 import { createDynamicQris, validateQrisPayload } from './lib/qris.js';
+import {
+  isQrisOpen,
+  STORE_CLOSED_MESSAGE,
+} from './lib/operatingHours.js';
 
 const STORAGE_KEY_CATS = '2akinostore_cats_v12';
 const STORAGE_KEY_PRODS = '2akinostore_products_v12';
@@ -203,6 +208,12 @@ function App() {
   const [stockDrafts, setStockDrafts] = useState({});
   const [trackQuery, setTrackQuery] = useState('');
   const [notice, setNotice] = useState('');
+  const [now, setNow] = useState(() => new Date());
+
+  useEffect(() => {
+    const interval = window.setInterval(() => setNow(new Date()), 30000);
+    return () => window.clearInterval(interval);
+  }, []);
 
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY_CATS, JSON.stringify(categories));
@@ -257,6 +268,8 @@ function App() {
     );
   }, [trackQuery, transactions]);
 
+  const qrisOpen = isQrisOpen(now);
+
   function openAdminAccess() {
     if (isAdminLoggedIn) setActiveTab('admin');
     else setLoginOpen(true);
@@ -282,6 +295,10 @@ function App() {
   }
 
   function startCheckout(product) {
+    if (!isQrisOpen(new Date())) {
+      setNotice(STORE_CLOSED_MESSAGE);
+      return;
+    }
     setCheckoutProduct(product);
     setCheckoutStep('form');
     setInvoice(null);
@@ -297,6 +314,10 @@ function App() {
       return;
     }
     if (!checkoutProduct) return;
+    if (!isQrisOpen(new Date())) {
+      setNotice(STORE_CLOSED_MESSAGE);
+      return;
+    }
     if (!staticQrisPayload) {
       setNotice(qrisSourceError || 'Sedang memuat kode QRIS toko. Coba lagi sebentar.');
       return;
@@ -329,6 +350,10 @@ function App() {
 
   function confirmPayment() {
     if (!invoice) return;
+    if (!isQrisOpen(new Date())) {
+      setNotice(STORE_CLOSED_MESSAGE);
+      return;
+    }
     setTransactions((current) => [invoice, ...current]);
     setCheckoutStep('success');
   }
@@ -536,8 +561,14 @@ function App() {
             <p className="text-[10px] uppercase tracking-wider text-zinc-500">Mulai dari</p>
             <p className="mt-1 text-lg font-bold tracking-tight text-white">{formatPrice(product.price)}</p>
           </div>
-          <Button size="sm" onClick={() => startCheckout(product)} className="shrink-0" disabled={product.stock === 0}>
-            {product.stock === 0 ? 'Habis' : <>Beli <ArrowRight size={14} /></>}
+          <Button
+            size="sm"
+            onClick={() => startCheckout(product)}
+            className="shrink-0"
+            disabled={product.stock === 0 || !qrisOpen}
+            title={!qrisOpen && product.stock !== 0 ? STORE_CLOSED_MESSAGE : undefined}
+          >
+            {product.stock === 0 ? 'Habis' : !qrisOpen ? 'Tutup' : <>Beli <ArrowRight size={14} /></>}
           </Button>
         </div>
       </motion.article>
@@ -632,7 +663,7 @@ function App() {
                 </div>
                 <div className="mt-9 flex flex-wrap gap-x-7 gap-y-3 border-t border-white/10 pt-5 text-xs text-zinc-400">
                   <span className="flex items-center gap-2"><ShieldCheck size={15} className="text-emerald-400" /> Pilihan terkurasi</span>
-                  <span className="flex items-center gap-2"><WalletCards size={15} className="text-red-300" /> QRIS tersedia</span>
+                  <span className="flex items-center gap-2"><WalletCards size={15} className="text-red-300" /> QRIS 07.00–20.00 WIB</span>
                   <span className="flex items-center gap-2"><Headphones size={15} className="text-violet-300" /> Bantuan via WhatsApp</span>
                 </div>
               </div>
@@ -649,6 +680,18 @@ function App() {
                   </span>
                 }
               />
+              {!qrisOpen && (
+                <div
+                  role="status"
+                  className="mb-5 flex items-start gap-3 rounded-2xl border border-amber-500/25 bg-amber-500/[0.07] p-4 text-xs leading-relaxed text-amber-100"
+                >
+                  <Clock3 size={16} className="mt-0.5 shrink-0 text-amber-300" aria-hidden="true" />
+                  <span>
+                    <strong className="font-semibold text-amber-200">Toko sedang tutup.</strong>{' '}
+                    {STORE_CLOSED_MESSAGE}
+                  </span>
+                </div>
+              )}
               <div className="mb-5 rounded-2xl border border-white/[0.08] bg-[#111114] p-4 sm:p-5">
                 <label htmlFor="catalog-search" className="text-xs font-semibold text-zinc-300">
                   Cari produk
@@ -1117,6 +1160,12 @@ function App() {
               {checkoutProduct ? `${checkoutProduct.title} · ${formatPrice(checkoutProduct.price)}` : 'Selesaikan pesanan Anda.'}
             </DialogDescription>
           </DialogHeader>
+          {checkoutProduct && !qrisOpen && (
+            <p role="alert" className="mb-4 flex items-start gap-2 rounded-xl border border-amber-500/25 bg-amber-500/[0.07] p-3 text-xs leading-relaxed text-amber-100">
+              <Clock3 size={15} className="mt-0.5 shrink-0 text-amber-300" aria-hidden="true" />
+              {STORE_CLOSED_MESSAGE}
+            </p>
+          )}
           {checkoutProduct && checkoutStep === 'form' && (
             <form onSubmit={processToQRIS} className="space-y-4">
               <div className="flex items-center gap-3 rounded-2xl border border-white/[0.07] bg-white/[0.03] p-4">
@@ -1139,8 +1188,8 @@ function App() {
                   {qrisSourceError}
                 </p>
               )}
-              <Button className="w-full" type="submit" disabled={!staticQrisPayload}>
-                {staticQrisPayload ? 'Lanjut bayar via QRIS' : 'Memuat QRIS toko…'}
+              <Button className="w-full" type="submit" disabled={!staticQrisPayload || !qrisOpen}>
+                {!qrisOpen ? 'Toko sedang tutup' : staticQrisPayload ? 'Lanjut bayar via QRIS' : 'Memuat QRIS toko…'}
                 <ArrowRight size={16} />
               </Button>
             </form>
@@ -1170,7 +1219,9 @@ function App() {
                 <span className="text-xs text-zinc-500">Nomor invoice</span>
                 <span className="font-mono text-xs font-bold text-amber-300">{invoice.code}</span>
               </div>
-              <Button variant="success" className="w-full" onClick={confirmPayment}><CheckCircle2 size={16} /> Saya sudah membayar</Button>
+              <Button variant="success" className="w-full" onClick={confirmPayment} disabled={!qrisOpen}>
+                <CheckCircle2 size={16} /> {qrisOpen ? 'Saya sudah membayar' : 'Toko sedang tutup'}
+              </Button>
               <p className="text-[10px] leading-relaxed text-zinc-500">Status tetap menunggu sampai admin memeriksa pembayaran masuk dan mencocokkan nominal.</p>
             </div>
           )}

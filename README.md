@@ -46,6 +46,27 @@ In **Daftar produk**:
 WeTV replaces the former YouTube catalog branding. Existing saved YouTube
 categories and products are migrated to WeTV when the app loads.
 
+## QRIS operating hours
+
+QRIS checkout is only available every day from 07:00 WIB (inclusive) until
+20:00 WIB (exclusive). Outside that window the buy button is disabled, the QR
+payload is not generated, and a notice explains when the store reopens:
+
+> Pembayaran QRIS hanya tersedia pukul 07.00–20.00 WIB. Silakan kembali saat jam operasional.
+
+The rule is anchored to the `Asia/Jakarta` timezone, not the visitor's device
+clock, so it behaves the same for customers in any timezone. Admin manual
+verification is deliberately **not** restricted: an admin may confirm a payment
+that genuinely arrived during operating hours.
+
+**This check is advisory.** The rule lives in `src/lib/operatingHours.js` and is
+enforced at every QRIS entry point in the app, but this is a static site with no
+server, so a user who edits the page in their browser can bypass it. Treat it as
+a usability guardrail, not a security control. Enforcing the window so it
+cannot be bypassed requires a backend that validates transactions server-side;
+`assertQrisOpen()` is kept pure and free of browser APIs so that a future server
+can call the exact same function.
+
 ## QRIS payment limitation
 
 Checkout creates a dynamic EMVCo QR payload locally from the configured static
