@@ -12,15 +12,16 @@ npm ci
 npm run dev
 ```
 
-Run the unit tests and production build before submitting changes:
+Run the unit tests and production build before pushing changes:
 
 ```sh
 npm test
 npm run build
 ```
 
-GitHub Actions runs both checks on pushes and pull requests targeting `main`.
-See [CICD.md](./CICD.md) for the repository's branch, commit, push, and PR workflow.
+GitHub Actions runs both checks on every push to `main`. See
+[CICD.md](./CICD.md) for the repository's single-branch (`main`) commit and
+push workflow.
 
 ## Admin catalog guide
 
