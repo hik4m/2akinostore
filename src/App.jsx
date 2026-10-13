@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useId, useMemo, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import {
   ArrowDownToLine,
@@ -26,7 +26,6 @@ import {
   Trash2,
   Tv,
   WalletCards,
-  Youtube,
 } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import qrisImage from '../DANA.jpeg';
@@ -38,6 +37,12 @@ import {
   DialogHeader,
   DialogTitle,
 } from './components/ui/dialog.jsx';
+import {
+  decrementProductStock,
+  filterProducts,
+  normalizeStockInput,
+  removeEmptyCategory,
+} from './lib/catalog.js';
 import { createDynamicQris, validateQrisPayload } from './lib/qris.js';
 
 const STORAGE_KEY_CATS = '2akinostore_cats_v12';
@@ -49,7 +54,7 @@ const defaultCategories = [
   { name: 'Netflix', icon: 'tv', color: 'text-red-400' },
   { name: 'CapCut', icon: 'video', color: 'text-cyan-300' },
   { name: 'Spotify', icon: 'spotify', color: 'text-emerald-400' },
-  { name: 'YouTube', icon: 'youtube', color: 'text-red-500' },
+  { name: 'WeTV', icon: 'wetv', color: 'text-emerald-300' },
   { name: 'Canva', icon: 'canva', color: 'text-blue-400' },
   { name: 'Disney+', icon: 'disney', color: 'text-indigo-300' },
   { name: 'iQIYI', icon: 'iqiyi', color: 'text-emerald-300' },
@@ -60,7 +65,7 @@ const defaultProducts = [
   { id: 'p2', category: 'Netflix', title: 'Netflix Private Full Account (4K)', price: 160000, duration: '30 Hari Full Garansi (5 Profile)', icon: 'film' },
   { id: 'p3', category: 'CapCut', title: 'CapCut Pro 1 Bulan', price: 15000, duration: '30 Hari Garansi', icon: 'video' },
   { id: 'p4', category: 'Spotify', title: 'Spotify Premium Individual', price: 25000, duration: '1 Bulan Garansi Anti Plan Fall', icon: 'spotify' },
-  { id: 'p5', category: 'YouTube', title: 'YouTube Premium No Ads', price: 15000, duration: '1 Bulan Invite Family', icon: 'youtube' },
+  { id: 'p5', category: 'WeTV', title: 'WeTV VIP Premium', price: 15000, duration: '1 Bulan Invite Family', icon: 'wetv' },
   { id: 'p6', category: 'Canva', title: 'Canva Pro Designer', price: 10000, duration: '1 Tahun Garansi Tim', icon: 'canva' },
   { id: 'p7', category: 'iQIYI', title: 'iQIYI VIP Premium Standard', price: 20000, duration: '1 Bulan Garansi Full', icon: 'iqiyi' },
 ];
@@ -75,13 +80,60 @@ function readStorage(key, fallback) {
   return value ? JSON.parse(value) : fallback;
 }
 
+function migrateYouTubeBranding(categories, products) {
+  return {
+    categories: categories.map((category) =>
+      category.name.toLowerCase() === 'youtube'
+        ? { ...category, name: 'WeTV', icon: 'wetv', color: 'text-emerald-300' }
+        : category,
+    ),
+    products: products.map((product) => {
+      const categoryWasYouTube = product.category.toLowerCase() === 'youtube';
+      const title = product.title.replace(/youtube/gi, 'WeTV');
+      return categoryWasYouTube || title !== product.title || product.icon?.toLowerCase().includes('youtube')
+        ? {
+            ...product,
+            category: categoryWasYouTube ? 'WeTV' : product.category,
+            title,
+            icon: product.icon?.toLowerCase().includes('youtube') ? 'wetv' : product.icon,
+          }
+        : product;
+    }),
+  };
+}
+
 function formatPrice(amount) {
   return `Rp ${currency.format(amount)}`;
 }
 
+function WeTVLogo({ size = 18, className = '' }) {
+  const gradientId = useId();
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      className={className}
+      aria-hidden="true"
+      focusable="false"
+    >
+      <defs>
+        <linearGradient id={gradientId} x1="3" y1="3" x2="21" y2="21" gradientUnits="userSpaceOnUse">
+          <stop stopColor="#28D17C" />
+          <stop offset=".52" stopColor="#25BCE8" />
+          <stop offset="1" stopColor="#8C54E9" />
+        </linearGradient>
+      </defs>
+      <path d="M5.2 2.8a2 2 0 0 0-3 1.74v14.92a2 2 0 0 0 3 1.74l12.9-7.46a2 2 0 0 0 0-3.48L5.2 2.8Z" fill={`url(#${gradientId})`} />
+      <path d="m9.1 8.15 5.2 3.01-5.2 3.01V8.15Z" fill="white" />
+    </svg>
+  );
+}
+
 function iconFor(value, size = 18) {
   const iconClass = 'shrink-0';
-  if (value?.includes('youtube')) return <Youtube size={size} className={`${iconClass} text-red-400`} />;
+  if (value?.toLowerCase().includes('wetv')) return <WeTVLogo size={size} className={iconClass} />;
   if (value?.includes('spotify')) return <Music2 size={size} className={`${iconClass} text-emerald-400`} />;
   if (value?.includes('video')) return <Sparkles size={size} className={`${iconClass} text-cyan-300`} />;
   if (value?.includes('film')) return <Film size={size} className={`${iconClass} text-rose-300`} />;
@@ -111,8 +163,14 @@ function SectionHeading({ eyebrow, title, description, action }) {
 }
 
 function App() {
-  const [categories, setCategories] = useState(() => readStorage(STORAGE_KEY_CATS, defaultCategories));
-  const [products, setProducts] = useState(() => readStorage(STORAGE_KEY_PRODS, defaultProducts));
+  const [initialCatalog] = useState(() =>
+    migrateYouTubeBranding(
+      readStorage(STORAGE_KEY_CATS, defaultCategories),
+      readStorage(STORAGE_KEY_PRODS, defaultProducts),
+    ),
+  );
+  const [categories, setCategories] = useState(initialCatalog.categories);
+  const [products, setProducts] = useState(initialCatalog.products);
   const [transactions, setTransactions] = useState(() => readStorage(STORAGE_KEY_TRANS, []));
   const [settings, setSettings] = useState(() => readStorage(STORAGE_KEY_SETTINGS, defaultSettings));
   const [activeTab, setActiveTab] = useState('store');
@@ -139,6 +197,9 @@ function App() {
   const [productTitle, setProductTitle] = useState('');
   const [productPrice, setProductPrice] = useState('');
   const [productDuration, setProductDuration] = useState('');
+  const [productStock, setProductStock] = useState('');
+  const [productSearchQuery, setProductSearchQuery] = useState('');
+  const [stockDrafts, setStockDrafts] = useState({});
   const [trackQuery, setTrackQuery] = useState('');
   const [notice, setNotice] = useState('');
 
@@ -271,10 +332,18 @@ function App() {
   function verifyTransaction(invoiceCode) {
     const transaction = transactions.find((item) => item.code === invoiceCode);
     if (!transaction || transaction.status === 'paid') return;
+    let productsAfterPayment;
+    try {
+      productsAfterPayment = decrementProductStock(products, transaction.productId);
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : 'Stok produk tidak mencukupi.');
+      return;
+    }
     const confirmed = window.confirm(
       `Pastikan pembayaran ${formatPrice(transaction.amount)} untuk invoice ${transaction.code} sudah diterima di akun QRIS merchant. Lanjutkan verifikasi manual?`,
     );
     if (!confirmed) return;
+    setProducts(productsAfterPayment);
     setTransactions((current) =>
       current.map((item) =>
         item.code === invoiceCode
@@ -307,6 +376,7 @@ function App() {
     setProductTitle('');
     setProductPrice('');
     setProductDuration('');
+    setProductStock('');
     setProductOpen(true);
   }
 
@@ -315,6 +385,13 @@ function App() {
     const price = Number(productPrice);
     if (!productTitle.trim() || !Number.isFinite(price) || price <= 0 || !productDuration.trim() || !productCategory) {
       setNotice('Mohon isi semua data produk dengan benar.');
+      return;
+    }
+    let stock;
+    try {
+      stock = normalizeStockInput(productStock);
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : 'Stok produk tidak valid.');
       return;
     }
     const category = categories.find((item) => item.name === productCategory);
@@ -326,6 +403,7 @@ function App() {
         title: productTitle.trim(),
         price,
         duration: productDuration.trim(),
+        stock,
         icon: category?.icon || 'tv',
       },
     ]);
@@ -337,6 +415,40 @@ function App() {
     if (!window.confirm('Apakah Anda yakin ingin menghapus produk ini?')) return;
     setProducts((current) => current.filter((product) => product.id !== productId));
     setNotice('Produk berhasil dihapus.');
+  }
+
+  function saveProductStock(productId) {
+    const product = products.find((item) => item.id === productId);
+    if (!product) return;
+
+    let stock;
+    try {
+      stock = normalizeStockInput(stockDrafts[productId] ?? (product.stock == null ? '' : String(product.stock)));
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : 'Stok produk tidak valid.');
+      return;
+    }
+    setProducts((current) => current.map((item) => (item.id === productId ? { ...item, stock } : item)));
+    setStockDrafts((current) => ({ ...current, [productId]: stock == null ? '' : String(stock) }));
+    setNotice(stock == null ? 'Produk sekarang memiliki stok tak terbatas.' : `Stok diperbarui menjadi ${stock}.`);
+  }
+
+  function deleteCategory(categoryName) {
+    const linkedProductCount = products.filter(
+      (product) => product.category.toLocaleLowerCase() === categoryName.toLocaleLowerCase(),
+    ).length;
+    if (linkedProductCount > 0) {
+      setNotice(`Tidak dapat menghapus kategori: ${linkedProductCount} produk masih terhubung. Hapus atau pindahkan produk terlebih dahulu.`);
+      return;
+    }
+    if (!window.confirm(`Hapus kategori "${categoryName}"? Tindakan ini tidak dapat dibatalkan.`)) return;
+
+    try {
+      setCategories(removeEmptyCategory(categories, products, categoryName));
+      setNotice(`Kategori ${categoryName} berhasil dihapus.`);
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : 'Kategori tidak dapat dihapus.');
+    }
   }
 
   function saveAdminSettings(event) {
@@ -399,8 +511,12 @@ function App() {
           <div className="flex h-12 w-12 items-center justify-center rounded-2xl border border-white/[0.08] bg-white/[0.04]">
             {iconFor(product.icon, 21)}
           </div>
-          <span className="rounded-full border border-emerald-500/20 bg-emerald-500/[0.08] px-2.5 py-1 text-[10px] font-semibold text-emerald-300">
-            Siap diproses
+          <span className={`rounded-full border px-2.5 py-1 text-[10px] font-semibold ${
+            product.stock === 0
+              ? 'border-red-500/20 bg-red-500/[0.08] text-red-300'
+              : 'border-emerald-500/20 bg-emerald-500/[0.08] text-emerald-300'
+          }`}>
+            {product.stock === 0 ? 'Habis' : product.stock == null ? 'Siap diproses' : `Stok: ${product.stock}`}
           </span>
         </div>
         <div className="mt-5 flex-1">
@@ -416,8 +532,8 @@ function App() {
             <p className="text-[10px] uppercase tracking-wider text-zinc-500">Mulai dari</p>
             <p className="mt-1 text-lg font-bold tracking-tight text-white">{formatPrice(product.price)}</p>
           </div>
-          <Button size="sm" onClick={() => startCheckout(product)} className="shrink-0">
-            Beli <ArrowRight size={14} />
+          <Button size="sm" onClick={() => startCheckout(product)} className="shrink-0" disabled={product.stock === 0}>
+            {product.stock === 0 ? 'Habis' : <>Beli <ArrowRight size={14} /></>}
           </Button>
         </div>
       </motion.article>
@@ -673,26 +789,82 @@ function App() {
 
             {adminTab === 'products' && (
               <div className="space-y-5">
+                <div className="rounded-2xl border border-white/[0.08] bg-[#111114] p-4 sm:p-5">
+                  <label htmlFor="admin-product-search" className="text-xs font-semibold text-zinc-300">Cari produk</label>
+                  <div className="relative mt-2">
+                    <Search size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500" />
+                    <input
+                      id="admin-product-search"
+                      type="search"
+                      className={`${inputClass} mt-0 pl-10`}
+                      value={productSearchQuery}
+                      onChange={(event) => setProductSearchQuery(event.target.value)}
+                      placeholder="Cari berdasarkan nama, kategori, atau durasi..."
+                    />
+                  </div>
+                  {productSearchQuery && (
+                    <p className="mt-2 text-[11px] text-zinc-500">
+                      {filterProducts(products, productSearchQuery).length} produk ditemukan
+                    </p>
+                  )}
+                </div>
                 {categories.map((category) => {
-                  const categoryProducts = products.filter((product) => product.category.toLowerCase() === category.name.toLowerCase());
+                  const categoryProducts = filterProducts(products, productSearchQuery).filter(
+                    (product) => product.category.toLowerCase() === category.name.toLowerCase(),
+                  );
+                  if (productSearchQuery.trim() && categoryProducts.length === 0) return null;
                   return (
                     <section key={category.name} className="rounded-2xl border border-white/[0.08] bg-[#111114] p-5">
-                      <div className="mb-4 flex items-center justify-between border-b border-white/[0.07] pb-4">
+                      <div className="mb-4 flex flex-wrap items-center justify-between gap-3 border-b border-white/[0.07] pb-4">
                         <h2 className="flex items-center gap-2 text-sm font-semibold text-white">{iconFor(category.icon, 17)} {category.name}</h2>
-                        <span className="text-xs text-zinc-500">{categoryProducts.length} produk</span>
+                        <div className="flex items-center gap-3">
+                          <span className="text-xs text-zinc-500">{categoryProducts.length} produk</span>
+                          <Button
+                            variant="danger"
+                            size="sm"
+                            onClick={() => deleteCategory(category.name)}
+                            aria-label={`Hapus kategori ${category.name}`}
+                          >
+                            <Trash2 size={13} /> Hapus kategori
+                          </Button>
+                        </div>
                       </div>
                       {categoryProducts.length ? (
                         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
                           {categoryProducts.map((product) => (
-                            <div key={product.id} className="flex items-start justify-between gap-3 rounded-xl border border-white/[0.06] bg-black/20 p-4">
-                              <div className="min-w-0">
-                                <p className="truncate text-xs font-semibold text-zinc-200">{product.title}</p>
-                                <p className="mt-1 text-[11px] text-zinc-500">{product.duration}</p>
-                                <p className="mt-3 text-sm font-bold text-red-300">{formatPrice(product.price)}</p>
+                            <div key={product.id} className="rounded-xl border border-white/[0.06] bg-black/20 p-4">
+                              <div className="flex items-start justify-between gap-3">
+                                <div className="min-w-0">
+                                  <p className="truncate text-xs font-semibold text-zinc-200">{product.title}</p>
+                                  <p className="mt-1 text-[11px] text-zinc-500">{product.duration}</p>
+                                  <p className="mt-3 text-sm font-bold text-red-300">{formatPrice(product.price)}</p>
+                                </div>
+                                <Button variant="danger" size="icon" className="h-8 w-8 shrink-0" onClick={() => deleteProduct(product.id)} aria-label={`Hapus ${product.title}`}>
+                                  <Trash2 size={14} />
+                                </Button>
                               </div>
-                              <Button variant="danger" size="icon" className="h-8 w-8" onClick={() => deleteProduct(product.id)} aria-label={`Hapus ${product.title}`}>
-                                <Trash2 size={14} />
-                              </Button>
+                              <div className="mt-4 border-t border-white/[0.06] pt-3">
+                                <label htmlFor={`product-stock-${product.id}`} className="flex items-center justify-between gap-2 text-[11px] font-semibold text-zinc-400">
+                                  Stok
+                                  <span className={product.stock === 0 ? 'text-red-300' : product.stock == null ? 'text-emerald-300' : 'text-zinc-300'}>
+                                    {product.stock === 0 ? 'Habis' : product.stock == null ? 'Tak terbatas' : `${product.stock} tersedia`}
+                                  </span>
+                                </label>
+                                <div className="mt-2 flex gap-2">
+                                  <input
+                                    id={`product-stock-${product.id}`}
+                                    type="number"
+                                    min="0"
+                                    step="1"
+                                    className={`${inputClass} mt-0 h-9`}
+                                    aria-label={`Stok ${product.title}`}
+                                    placeholder="Kosong = tak terbatas"
+                                    value={stockDrafts[product.id] ?? (product.stock == null ? '' : String(product.stock))}
+                                    onChange={(event) => setStockDrafts((current) => ({ ...current, [product.id]: event.target.value }))}
+                                  />
+                                  <Button size="sm" className="h-9 shrink-0" onClick={() => saveProductStock(product.id)}>Simpan</Button>
+                                </div>
+                              </div>
                             </div>
                           ))}
                         </div>
@@ -700,6 +872,12 @@ function App() {
                     </section>
                   );
                 })}
+                {productSearchQuery.trim() && filterProducts(products, productSearchQuery).length === 0 && (
+                  <div className="rounded-2xl border border-dashed border-white/10 py-12 text-center">
+                    <p className="text-sm font-semibold text-zinc-300">Produk tidak ditemukan</p>
+                    <p className="mt-1 text-xs text-zinc-500">Coba kata kunci nama, kategori, atau durasi yang berbeda.</p>
+                  </div>
+                )}
               </div>
             )}
 
@@ -825,7 +1003,7 @@ function App() {
                 <option value="tv">Streaming</option>
                 <option value="film">Film</option>
                 <option value="spotify">Musik</option>
-                <option value="youtube">YouTube</option>
+                <option value="wetv">WeTV</option>
                 <option value="video">Video editor</option>
                 <option value="iqiyi">Drama</option>
                 <option value="canva">Desain</option>
@@ -863,6 +1041,20 @@ function App() {
                 <label htmlFor="product-duration" className="text-xs font-semibold text-zinc-300">Durasi / garansi</label>
                 <input id="product-duration" className={inputClass} value={productDuration} onChange={(event) => setProductDuration(event.target.value)} placeholder="30 Hari Garansi" />
               </div>
+            </div>
+            <div>
+              <label htmlFor="product-stock" className="text-xs font-semibold text-zinc-300">Stok awal</label>
+              <input
+                id="product-stock"
+                type="number"
+                min="0"
+                step="1"
+                className={inputClass}
+                value={productStock}
+                onChange={(event) => setProductStock(event.target.value)}
+                placeholder="Kosong = tak terbatas"
+              />
+              <p className="mt-1 text-[10px] text-zinc-500">Masukkan bilangan bulat nol atau lebih. Kosongkan untuk stok tak terbatas.</p>
             </div>
             <Button className="mt-2 w-full" type="submit"><Plus size={16} /> Simpan produk</Button>
           </form>
