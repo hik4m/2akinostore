@@ -73,7 +73,7 @@ const defaultProducts = [
 const defaultSettings = { adminWA: '6285111219046', adminPass: '0987654321' };
 const currency = new Intl.NumberFormat('id-ID');
 const inputClass =
-  'mt-2 h-11 w-full rounded-xl border border-white/10 bg-black/30 px-4 text-sm text-white outline-none transition placeholder:text-zinc-600 focus:border-red-500/70 focus:ring-2 focus:ring-red-500/15';
+  'mt-2 h-11 w-full rounded-xl border border-white/15 bg-black/40 px-4 text-sm text-white outline-none transition placeholder:text-zinc-400 focus:border-red-500/70 focus:ring-2 focus:ring-red-500/15';
 
 function readStorage(key, fallback) {
   const value = localStorage.getItem(key);
@@ -678,10 +678,10 @@ function App() {
                       type="button"
                       key={name}
                       onClick={() => setSelectedCategory(name)}
-                      className={`flex h-10 shrink-0 items-center gap-2 rounded-xl border px-4 text-xs font-semibold transition ${
+                      className={`flex h-10 shrink-0 items-center gap-2 rounded-xl border border-solid px-4 text-xs font-semibold transition ${
                         active
-                          ? 'border-red-500/30 bg-red-600 text-white shadow-lg shadow-red-950/30'
-                          : 'border-white/[0.07] bg-white/[0.025] text-zinc-400 hover:border-white/15 hover:text-white'
+                          ? '!border-red-500/40 bg-red-600 text-white shadow-lg shadow-red-950/30'
+                          : '!border-white/20 bg-white/[0.04] text-zinc-200 hover:!border-white/40 hover:bg-white/[0.08] hover:text-white'
                       }`}
                     >
                       {name === 'All' ? <Package size={15} /> : iconFor(category?.icon, 15)}
